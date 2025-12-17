@@ -2,6 +2,7 @@ using nspector.Common;
 using nspector.Common.Helper;
 using nspector.Native.NVAPI2;
 using nspector.Native.WINAPI;
+using nspector.XmlExportModel;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -10,6 +11,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Serialization;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -159,10 +161,10 @@ namespace nspector
                 RefreshApplicationsCombosAndText(applications);
 
                 foreach (var itm in from settingItem in _currentProfileSettingItems
-                         where !settingItem.IsSettingHidden
-                         let itm = lvSettings.Items.Add(CreateListViewItem(settingItem))
-                         where Debugger.IsAttached && !settingItem.IsApiExposed
-                         select itm)
+                                    where !settingItem.IsSettingHidden
+                                    let itm = lvSettings.Items.Add(CreateListViewItem(settingItem))
+                                    where Debugger.IsAttached && !settingItem.IsApiExposed
+                                    select itm)
                 {
                     itm.ForeColor = Color.LightCoral;
                 }
@@ -1465,37 +1467,37 @@ namespace nspector
                 switch (match.Groups[1].Value)
                 {
                     case "Profile":
-                    {
-                        var profileName = match.Groups[2].Value;
-                        if (!games.ContainsKey(profileName.ToLower()))
                         {
-                            games.Add(profileName.ToLower(), new List<string>());
+                            var profileName = match.Groups[2].Value;
+                            if (!games.ContainsKey(profileName.ToLower()))
+                            {
+                                games.Add(profileName.ToLower(), new List<string>());
+                            }
+
+                            if (!upperCaseNames.ContainsKey(profileName.ToLower()))
+                            {
+                                upperCaseNames.Add(profileName.ToLower(), profileName);
+                            }
+
+                            lastGame = profileName.ToLower();
+
+                            break;
                         }
-
-                        if (!upperCaseNames.ContainsKey(profileName.ToLower()))
-                        {
-                            upperCaseNames.Add(profileName.ToLower(), profileName);
-                        }
-
-                        lastGame = profileName.ToLower();
-
-                        break;
-                    }
                     case "Executable":
-                    {
-                        var executableName = match.Groups[2].Value;
-                        if (!games[lastGame].Contains(executableName.ToLower()))
                         {
-                            games[lastGame].Add(executableName.ToLower());
-                        }
+                            var executableName = match.Groups[2].Value;
+                            if (!games[lastGame].Contains(executableName.ToLower()))
+                            {
+                                games[lastGame].Add(executableName.ToLower());
+                            }
 
-                        if (!upperCaseNames.ContainsKey(executableName.ToLower()))
-                        {
-                            upperCaseNames.Add(executableName.ToLower(), executableName);
-                        }
+                            if (!upperCaseNames.ContainsKey(executableName.ToLower()))
+                            {
+                                upperCaseNames.Add(executableName.ToLower(), executableName);
+                            }
 
-                        break;
-                    }
+                            break;
+                        }
                 }
             }
 
@@ -1606,6 +1608,65 @@ namespace nspector
                 }
 
                 lvSettings.Select();
+            }
+        }
+
+        private void toolStripExportSettingsButton_Click(object sender, EventArgs e)
+        {
+            var applications = new Dictionary<string, string>();
+
+            var settings = _drs.GetSettingsForProfile(_CurrentProfile, SettingViewMode.IncludeScannedSetttings, ref applications);
+
+            List<SettingItem> settingsList = _drs.GetSettingsForProfile(_CurrentProfile, SettingViewMode.IncludeScannedSetttings, ref applications);
+
+            SaveFileDialog saveFileDialog = new SaveFileDialog();
+
+            saveFileDialog.Filter = "XML files (*.xml)|*.xml|All files (*.*)|*.*";
+            saveFileDialog.FilterIndex = 1; // The default is XML
+            saveFileDialog.RestoreDirectory = true; // Restore the previous directory
+            saveFileDialog.Title = "Save settings";
+            saveFileDialog.DefaultExt = "xml";
+            saveFileDialog.AddExtension = true;
+
+            // Provide default file name
+            saveFileDialog.FileName = "settings_" + DateTime.Now.ToString("yyyyMMdd_HHmm") + ".xml";
+
+            // Show dialog
+            if (saveFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                try
+                {
+                    // Save the file
+                    SaveSettingsToXml(settingsList.Select(SettingItemXml.MapFromServiceModel).ToList(), saveFileDialog.FileName);
+
+                    // Show success report
+                    MessageBox.Show($"File successfully saved:\n{saveFileDialog.FileName}",
+                                  "Success",
+                                  MessageBoxButtons.OK,
+                                  MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error while saving file:\n{ex.Message}",
+                                  "Error",
+                                  MessageBoxButtons.OK,
+                                  MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private void SaveSettingsToXml(List<SettingItemXml> settings, string filePath)
+        {
+            var serializer = new DataContractSerializer(typeof(List<SettingItemXml>));
+            var settingsXml = new XmlWriterSettings
+            {
+                Indent = true,
+                IndentChars = "  "
+            };
+
+            using (var writer = XmlWriter.Create(filePath, settingsXml))
+            {
+                serializer.WriteObject(writer, settings);
             }
         }
     }
